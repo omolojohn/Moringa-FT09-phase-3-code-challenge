@@ -1,13 +1,17 @@
 from database.connection import get_db_connection
 from database.setup import create_tables
+from models.author import Author
+from models.magazine import Magazine
 
 class Article:
-    def __init__(self, title, content, author_id, magazine_id, id=None):
-        self.id = id
+    def __init__(self, title, content, author, magazine, id=None):
+        self._id = id
         self.title = title
         self.content = content
-        self.author_id = author_id
-        self.magazine_id = magazine_id
+        self.author = author
+        self.magazine = magazine
+        if not self._id:
+            self._create_article_in_db()
 
     @classmethod
     def create_table(cls):
@@ -21,23 +25,20 @@ class Article:
         conn.commit()
         conn.close()
 
-    def save(self):
+    def _create_article_in_db(self):
         conn = get_db_connection()
-        try:
-            cursor = conn.cursor()
-            cursor.execute(
-                'INSERT INTO articles (title, content, author_id, magazine_id) VALUES (?, ?, ?, ?)',  
-                (self.title, self.content, self.author_id, self.magazine_id)  
-            )
-            self.id = cursor.lastrowid
-            conn.commit()
-        finally:
-            conn.close()
+        cursor = conn.cursor()
+        cursor.execute(
+            'INSERT INTO articles (title, content, author_id, magazine_id) VALUES (?, ?, ?, ?)',
+            (self._title, self.content, self.author.id, self.magazine.id)
+        )
+        self._id = cursor.lastrowid
+        conn.commit()
+        conn.close()
 
     @classmethod
     def create(cls, title, content, author, magazine):
-        article = cls(title, content, author.id, magazine.id)
-        article.save()
+        article = cls(title, content, author, magazine)
         return article
 
     @property
@@ -58,22 +59,51 @@ class Article:
     def title(self, value):
         if not isinstance(value, str):
             raise ValueError("Title must be a string")
-        if len(value) == 0:
-            raise ValueError("Title must be longer than 0 characters")
+        if not 5 <= len(value) <= 50:
+            raise ValueError("Title must be between 5 and 50 characters long")
         self._title = value
 
-    def fetch_from_db(self, article_id):
+    def fetch_author(self):
         conn = get_db_connection()
-        try:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM authors WHERE id = ?', (self.author.id,))
+        author_data = cursor.fetchone()
+        conn.close()
+        if author_data:
+            return Author(author_data[1], author_data[0])
+        else:
+            raise ValueError("Author with given ID does not exist")
+
+    def fetch_magazine(self):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM magazines WHERE id = ?', (self.magazine.id,))
+        magazine_data = cursor.fetchone()
+        conn.close()
+        if magazine_data:
+            return Magazine(magazine_data[1], magazine_data[2], magazine_data[0])
+        else:
+            raise ValueError("Magazine with given ID does not exist")
+
+    def save(self):
+        if not self._id:
+            self._create_article_in_db()
+        else:
+            conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute('SELECT * FROM articles WHERE id = ?', (article_id,))
-            article_data = cursor.fetchone()
-            if article_data:
-                self.id, self._title, self.content, self.author_id, self.magazine_id = article_data
-            else:
-                raise ValueError("Article with given ID does not exist in the database")
-        finally:
+            cursor.execute(
+                'UPDATE articles SET title = ?, content = ?, author_id = ?, magazine_id = ? WHERE id = ?',
+                (self.title, self.content, self.author.id, self.magazine.id, self._id)
+            )
+            conn.commit()
             conn.close()
+
+    def delete(self):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM articles WHERE id = ?', (self.id,))
+        conn.commit()
+        conn.close()
 
     def __repr__(self):
         return f'<Article {self.title}>'

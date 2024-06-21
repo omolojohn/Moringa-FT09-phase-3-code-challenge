@@ -1,10 +1,12 @@
 from database.connection import get_db_connection
 
 class Magazine:
-    def __init__(self, id, name, category):
-        self.id = id
+    def __init__(self, name, category, id=None):
+        self._id = id
         self.name = name
         self.category = category
+        if not self._id:
+            self._create_magazine_in_db()
 
     @property
     def id(self):
@@ -23,10 +25,11 @@ class Magazine:
 
     @name.setter
     def name(self, value):
-        if isinstance(value, str) and 2 <= len(value) <= 16:
-            self._name = value
-        else:
-            raise ValueError("Name must be a string between 2 and 16 characters long")
+        if not isinstance(value, str):
+            raise ValueError("Name must be a string")
+        if not 2 <= len(value) <= 16:
+            raise ValueError("Name must be between 2 and 16 characters long")
+        self._name = value
 
     @property
     def category(self):
@@ -34,13 +37,19 @@ class Magazine:
 
     @category.setter
     def category(self, value):
-        if isinstance(value, str) and len(value) > 0:
-            self._category = value
-        else:
-            raise ValueError("Category must be a non-empty string")
+        if not isinstance(value, str):
+            raise ValueError("Category must be a string")
+        if len(value) == 0:
+            raise ValueError("Category must be longer than 0 characters")
+        self._category = value
 
-    def __repr__(self):
-        return f'<Magazine {self.name}>'
+    def _create_magazine_in_db(self):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO magazines (name, category) VALUES (?, ?)', (self._name, self._category))
+        self._id = cursor.lastrowid
+        conn.commit()
+        conn.close()
 
     @classmethod
     def drop_table(cls):
@@ -64,17 +73,10 @@ class Magazine:
         conn.commit()
         conn.close()
 
-    @staticmethod
-    def create(name, category):
-        if not name or not category:
-            raise ValueError("Name and category are required")
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('INSERT INTO magazines (name, category) VALUES (?, ?)', (name, category))
-        conn.commit()
-        magazine_id = cursor.lastrowid
-        conn.close()
-        return Magazine(magazine_id, name, category)
+    @classmethod
+    def create(cls, name, category):
+        magazine = cls(name, category)
+        return magazine
 
     @classmethod
     def get_all(cls):
@@ -83,7 +85,7 @@ class Magazine:
         cursor.execute('SELECT * FROM magazines')
         rows = cursor.fetchall()
         conn.close()
-        return [Magazine(row[0], row[1], row[2]) for row in rows]
+        return [Magazine(row[1], row[2], row[0]) for row in rows]
 
     @classmethod
     def get_by_id(cls, magazine_id):
@@ -93,7 +95,7 @@ class Magazine:
         row = cursor.fetchone()
         conn.close()
         if row:
-            return Magazine(row[0], row[1], row[2])
+            return Magazine(row[1], row[2], row[0])
         return None
 
     def save(self):
@@ -109,3 +111,57 @@ class Magazine:
         cursor.execute('DELETE FROM magazines WHERE id = ?', (self.id,))
         conn.commit()
         conn.close()
+
+    def articles(self):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT a.id, a.title, a.content FROM articles a
+            JOIN magazines m ON a.magazine_id = m.id
+            WHERE m.id = ?
+        ''', (self.id,))
+        articles = cursor.fetchall()
+        conn.close()
+        return articles
+
+    def contributors(self):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT DISTINCT au.id, au.name FROM authors au
+            JOIN articles a ON au.id = a.author_id
+            WHERE a.magazine_id = ?
+        ''', (self.id,))
+        contributors = cursor.fetchall()
+        conn.close()
+        return [Author(row[1], row[0]) for row in contributors]
+
+    def article_titles(self):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT title FROM articles
+            WHERE magazine_id = ?
+        ''', (self.id,))
+        titles = cursor.fetchall()
+        conn.close()
+        return [title[0] for title in titles] if titles else None
+
+    def contributing_authors(self):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT au.id, au.name FROM authors au
+            JOIN (
+                SELECT author_id, COUNT(*) as article_count FROM articles
+                WHERE magazine_id = ?
+                GROUP BY author_id
+                HAVING article_count > 2
+            ) fa ON au.id = fa.author_id
+        ''', (self.id,))
+        authors = cursor.fetchall()
+        conn.close()
+        return [Author(row[1], row[0]) for row in authors]
+
+    def __repr__(self):
+        return f'<Magazine {self.name}>'

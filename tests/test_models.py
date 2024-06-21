@@ -4,16 +4,30 @@ from models.article import Article
 from models.magazine import Magazine
 
 class TestModels(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # Create tables before starting tests
+        Author.create_table()
+        Magazine.create_table()
+
+    @classmethod
+    def tearDownClass(cls):
+        # Drop tables after all tests are done
+        Author.drop_table()
+        Magazine.drop_table()
+
     def test_author_creation(self):
         author = Author("John Doe")
         self.assertEqual(author.name, "John Doe")
 
     def test_article_creation(self):
-        article = Article("Test Title", "Test Content", 1, 1)
+        author = Author.create("John Doe")
+        magazine = Magazine.create("Tech Weekly", "Technology")
+        article = Article.create("Test Title", "Test Content", author, magazine)
         self.assertEqual(article.title, "Test Title")
 
     def test_magazine_creation(self):
-        magazine = Magazine(1, "Tech Weekly", "Technology")
+        magazine = Magazine.create("Tech Weekly", "Technology")
         self.assertEqual(magazine.name, "Tech Weekly")
 
     def test_author_name_validation(self):
@@ -22,33 +36,31 @@ class TestModels(unittest.TestCase):
         with self.assertRaises(ValueError):
             Author(123) 
 
+    def test_article_title_validation(self):
+        author = Author.create("John Doe")
+        magazine = Magazine.create("Tech Weekly", "Technology")
+        with self.assertRaises(ValueError):
+            Article("", "Content", author, magazine)
+        with self.assertRaises(ValueError):
+            Article(123, "Content", author, magazine)
+
+    def test_magazine_name_validation(self):
+        with self.assertRaises(ValueError):
+            Magazine.create("", "Category")
+        with self.assertRaises(ValueError):
+            Magazine.create("A very long name that exceeds sixteen characters", "Category") 
+
+    def test_magazine_category_validation(self):
+        with self.assertRaises(ValueError):
+            Magazine.create("Valid Name", "") 
+
     def test_author_save_and_fetch(self):
-        Author.drop_table()
-        Author.create_table()
         author = Author.create("John Doe")
         fetched_author = Author("placeholder")
         fetched_author.fetch_from_db(author.id)
         self.assertEqual(fetched_author.name, "John Doe")
 
-    def test_article_title_validation(self):
-        with self.assertRaises(ValueError):
-            Article("", "Content", 1, 1)
-        with self.assertRaises(ValueError):
-            Article(123, "Content", 1, 1)  
-
-    def test_magazine_name_validation(self):
-        with self.assertRaises(ValueError):
-            Magazine(1, "", "Category")
-        with self.assertRaises(ValueError):
-            Magazine(1, "A very long name that exceeds sixteen characters", "Category") 
-
-    def test_magazine_category_validation(self):
-        with self.assertRaises(ValueError):
-            Magazine(1, "Valid Name", "") 
-
     def test_magazine_save_and_fetch(self):
-        Magazine.drop_table()
-        Magazine.create_table()
         magazine = Magazine.create("Tech Weekly", "Technology")
         fetched_magazine = Magazine.get_by_id(magazine.id)
         self.assertEqual(fetched_magazine.name, "Tech Weekly")
